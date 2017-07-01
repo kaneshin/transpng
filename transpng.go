@@ -6,6 +6,7 @@ import (
 	_ "image/jpeg"
 	"image/png"
 	"io"
+	"math"
 )
 
 // A Decoder reads and decodes image from an input stream.
@@ -24,7 +25,32 @@ func NewDecoder(r io.Reader) *Decoder {
 // Decode reads the Transparency-PNG image from its input and stores it in
 // the value pointed to by w.
 func (dec *Decoder) Decode(w io.Writer) error {
-	return nil
+	if dec.img == nil {
+		img, _, err := image.Decode(dec.r)
+		if err != nil {
+			return err
+		}
+		dec.img = img
+	}
+
+	var dst *image.NRGBA
+	switch img := dec.img.(type) {
+	case *image.NRGBA:
+		dst = img
+	default:
+		dst = image.NewNRGBA(dec.img.Bounds())
+		draw.Draw(dst, dst.Bounds(), dec.img, image.ZP, draw.Src)
+	}
+
+	p := dst.Bounds().Max
+	x, y := p.X-1, p.Y-1
+	c := dst.NRGBAAt(x, y)
+	if c.A < math.MaxUint8 {
+		c.A += 1
+		dst.SetNRGBA(x, y, c)
+	}
+
+	return png.Encode(w, dst)
 }
 
 // An Encoder writes image to an output stream.
@@ -55,13 +81,13 @@ func (enc *Encoder) Encode(r io.Reader) error {
 		draw.Draw(dst, dst.Bounds(), img, image.ZP, draw.Src)
 	}
 
-	// TODO: is transparent
-
 	p := dst.Bounds().Max
 	x, y := p.X-1, p.Y-1
 	c := dst.NRGBAAt(x, y)
-	c.A -= 1
-	dst.SetNRGBA(x, y, c)
+	if c.A == math.MaxUint8 {
+		c.A -= 1
+		dst.SetNRGBA(x, y, c)
+	}
 
 	return png.Encode(enc.w, dst)
 }
